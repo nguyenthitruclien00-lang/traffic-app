@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+
+<html lang="vi">
+
+<head>
+
+<meta charset="utf-8" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<title>Ứng dụng cảnh báo kẹt xe & phân tích lộ trình</title>
+
+
+
+<!-- Leaflet & Routing -->
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css"/>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+<script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+
+
+
+<!-- HLS.js -->
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+
+
+
+<style>
+
+  :root{
+
+    --bg:#0f172a; --panel:#111827; --card:#1f2937; --muted:#9ca3af;
+
+    --ok:#22c55e; --warn:#f59e0b; --danger:#ef4444; --txt:#e5e7eb;
+
+    --border:#334155;
+
+  }
+
+  *{box-sizing:border-box}
+
+  body{margin:0; background:var(--bg); color:var(--txt);
+
+    font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+
+  .app{display:grid; grid-template-columns:380px 1fr; height:100vh}
+
+  aside{background:linear-gradient(180deg,#0b1024,#0f172a); border-right:1px solid #1f2937; padding:14px; overflow:auto}
+
+  header h1{margin:0 0 6px; font-size:18px}
+
+  header .subtitle{color:var(--muted); font-size:12px; margin-bottom:8px}
+
+
+
+  .panel{background:var(--panel); border:1px solid #1f2937; border-radius:12px; padding:12px; margin-bottom:12px}
+
+  .panel h2{font-size:14px; margin:0 0 8px; color:#cbd5e1}
+
+  label{display:block; font-size:12px; color:var(--muted); margin:6px 0 4px}
+
+  input, select{width:100%; background:#0b1020; border:1px solid var(--border); color:var(--txt);
+
+    padding:10px 12px; border-radius:10px; outline:none}
+
+  .row{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+
+  button{width:100%; border:0; padding:10px 12px; border-radius:10px; cursor:pointer; font-weight:700}
+
+  .primary{background:var(--ok); color:#06260f}
+
+  .secondary{background:#0b1020; color:#d1d5db; border:1px solid var(--border)}
+
+  .danger{background:var(--danger); color:#fff}
+
+  #map{height:100vh; width:100%}
+
+
+
+  .pill{display:inline-flex; align-items:center; gap:8px; background:#0b1020; border:1px solid var(--border);
+
+    padding:8px 10px; border-radius:999px; font-size:12px; color:#d1d5db}
+
+  .badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700}
+
+  .badge.ok{background:rgba(34,197,94,.12); color:#bbf7d0; border:1px solid rgba(34,197,94,.35)}
+
+  .badge.warn{background:rgba(245,158,11,.12); color:#fde68a; border:1px solid rgba(245,158,11,.35)}
+
+  .badge.danger{background:rgba(239,68,68,.15); color:#fecaca; border:1px solid rgba(239,68,68,.35)}
+
+  .alerts{display:flex; flex-direction:column; gap:8px}
+
+  .alert{background:var(--card); border:1px solid #374151; border-radius:12px; padding:10px}
+
+
+
+  table{width:100%; border-collapse:separate; border-spacing:0; overflow:hidden; border:1px solid #1f2937; border-radius:10px}
+
+  th,td{padding:8px 10px; border-bottom:1px solid #1f2937; font-size:13px}
+
+  th{background:#0b1020; color:#cbd5e1; text-align:left; position:sticky; top:0}
+
+  tr:last-child td{border-bottom:none}
+
+  tr.reco td{background:rgba(34,197,94,.08)}
+
+  .key{font-variant-numeric:tabular-nums}
+
+
+
+  .camera{background:var(--panel); border:1px solid #1f2937; border-radius:12px; overflow:hidden}
+
+  .camera video{width:100%; height:200px; object-fit:cover; background:#000; display:block}
+
+  .camera .meta{padding:10px; display:flex; align-items:center; justify-content:space-between}
+
+  .lanes{display:flex; gap:6px}
+
+  .lane{width:18px; height:32px; border-radius:4px; border:1px solid var(--border); background:#0b1020;
+
+    display:flex; align-items:center; justify-content:center; font-size:11px; color:#9ca3af}
+
+  .lane.open{background:rgba(34,197,94,.15); color:#86efac; border-color:rgba(34,197,94,.4)}
+
+  .lane.closed{background:rgba(239,68,68,.15); color:#fecaca; border-color:rgba(239,68,68,.4)}
+
+
+
+  .list{display:flex; flex-direction:column; gap:6px; margin-top:6px}
+
+  .item{display:flex; align-items:center; justify-content:space-between; border:1px solid var(--border); background:#0b1020; border-radius:10px; padding:8px 10px; cursor:pointer}
+
+  .item:hover{border-color:#475569}
+
+
+
+  .toast{position:fixed; right:16px; bottom:16px; display:flex; flex-direction:column; gap:8px; z-index:9999}
+
+  .toast .it{background:#0b1020; border:1px solid var(--border); color:#e5e7eb; padding:10px 12px; border-radius:10px; max-width:320px}
+
+  .legend{display:flex; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--muted)}
+
+  .legend span{display:inline-flex; align-items:center; gap:6px}
+
+  .dot{width:10px; height:10px; border-radius:50%}
+
+  .dot.low{background:#22c55e} .dot.med{background:#f59e0b} .dot.high{background:#ef4444}
+
+  .switch{display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border:1px solid var(--border); background:#0b1020; border-radius:10px; margin-bottom:8px}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="app">
+
+  <aside>
+
+    <header>
+
+      <h1>🚦 Cảnh báo kẹt xe & Phân tích lộ trình</h1>
+
+      <div class="subtitle">Demo: Leaflet + OSRM + Camera HLS/MJPEG</div>
+
+    </header>
+
+
+
+    <div class="panel">
+
+      <h2>Điểm đi / Điểm đến</h2>
+
+      <label>Điểm đi (click bản đồ để chọn)</label>
+
+      <input id="start" placeholder="vd: 10.776, 106.700"/>
+
+      <label>Điểm đến (click bản đồ để chọn)</label>
+
+      <input id="end" placeholder="vd: 10.787, 106.705"/>
+
+      <div class="row" style="margin-top:6px">
+
+        <button class="primary" id="btnRoute">Tính lộ trình</button>
+
+        <button class="secondary" id="btnAlt">Thêm tuyến thay thế</button>
+
+      </div>
+
+      <div class="row" style="margin-top:6px">
+
+        <button class="secondary" id="btnGeo">Lấy vị trí của tôi</button>
+
+        <button class="secondary" id="btnClear">Xoá</button>
+
+      </div>
+
+      <div class="legend" style="margin-top:8px">
+
+        <span><i class="dot low"></i> Thấp</span>
+
+        <span><i class="dot med"></i> Trung bình</span>
+
+        <span><i class="dot high"></i> Cao</span>
+
+        <span class="pill" id="etaPill" style="display:none">⏱ <span id="etaTxt">ETA</span></span>
+
+      </div>
+
+    </div>
+
+
+
+    <div class="panel">
+
+      <h2>Lớp dữ liệu & cảnh báo</h2>
+
+      <div class="switch"><span>Tầng ùn tắc</span><label><input type="checkbox" id="toggleHeat" checked> Bật</label></div>
+
+      <div class="switch"><span>Vùng sự cố/đóng đường</span><label><input type="checkbox" id="toggleIncidents" checked> Bật</label></div>
+
+      <div class="switch"><span>Camera phân luồng</span><label><input type="checkbox" id="toggleCams" checked> Bật</label></div>
+
+      <div class="alerts" id="alerts"></div>
+
+    </div>
+
+
+
+    <div class="panel">
+
+      <h2>Phân tích tuyến</h2>
+
+      <div style="font-size:12px; color:var(--muted); margin-bottom:6px">So sánh nhiều tuyến & ước lượng độ trễ do kẹt</div>
+
+      <div id="analysis"></div>
+
+    </div>
+
+
+
+    <div class="panel camera">
+
+      <video id="camPlayer" controls playsinline></video>
+
+      <div class="meta">
+
+        <div style="display:flex; flex-direction:column">
+
+          <strong id="camTitle">Camera: chưa chọn</strong>
+
+          <small id="camSub" style="color:var(--muted)">Chọn marker camera trên bản đồ hoặc bên dưới</small>
+
+        </div>
+
+        <div class="lanes" id="lanes">
+
+          <div class="lane">1</div><div class="lane">2</div><div class="lane">3</div><div class="lane">4</div>
+
+        </div>
+
+      </div>
+
+      <div style="padding:10px; display:grid; grid-template-columns:1fr auto; gap:8px">
+
+        <input id="camUrl" placeholder="URL HLS (m3u8) / MP4 / MJPEG"/>
+
+        <button id="btnPlay" class="secondary">Phát</button>
+
+      </div>
+
+      <div class="list" id="camList"></div>
+
+    </div>
+
+
+
+    <div class="panel">
+
+      <h2>Ghi chú triển khai thực tế</h2>
+
+      <ul style="margin:0 0 0 18px; padding:0; color:var(--muted); font-size:12px">
+
+        <li>Thay dữ liệu demo bằng feed ITS (camera AI, cảm biến, crowdsourcing) qua WebSocket/REST.</li>
+
+        <li>Tự host OSRM/Valhalla + trọng số theo tốc độ thực để có ETA/độ trễ chính xác.</li>
+
+        <li>Camera RTSP → HLS/MJPEG bằng ffmpeg/rtsp-simple-server, nhập URL vào ô phía trên.</li>
+
+      </ul>
+
+    </div>
+
+  </aside>
+
+
+
+  <div id="map"></div>
+
+</div>
+
+
+
+<div class="toast" id="toast"></div>
+
+
+
+<script>
+
+/* ====== Tiện ích DOM / Toast ====== */
+
+const $ = sel => document.querySelector(sel);
+
+const alertsBox = $('#alerts');
+
+const toastBox = $('#toast');
+
+const toast = (msg)=>{ const el=document.createElement('div'); el.className='it'; el.innerHTML=msg; toastBox.appendChild(el); setTimeout(()=>el.remove(),4500); }
+
+const pushAlert = (title, content, type='warn')=>{
+
+  const el = document.createElement('div'); el.className='alert';
+
+  const c = type==='danger'?'danger':type==='ok'?'ok':'warn';
+
+  el.innerHTML = `<div class="badge ${c}">${title}</div><div style="margin-top:6px">${content}</div>`;
+
+  alertsBox.prepend(el);
+
+}
+
+
+
+/* ====== Bản đồ ====== */
+
+const map = L.map('map', { zoomControl:false }).setView([10.776,106.700], 13);
+
+L.control.zoom({position:'bottomright'}).addTo(map);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(map);
+
+
+
+let startMarker=null, endMarker=null;
+
+let cameraMarkers=[], incidentLayer=L.layerGroup().addTo(map), heatLayer=L.layerGroup().addTo(map);
+
+let routeControl=null;
+
+
+
+/* ====== Dữ liệu demo ====== */
+
+// 4 camera mẫu
+
+const cameras = [
+
+  { id:'cam1', name:'Nguyễn Thị Minh Khai × Pasteur', coord:[10.7787,106.6957], url:'' },
+
+  { id:'cam2', name:'Điện Biên Phủ × D2',           coord:[10.8028,106.7141], url:'' },
+
+  { id:'cam3', name:'Trường Chinh × Cộng Hòa',      coord:[10.8007,106.6423], url:'' },
+
+  { id:'cam4', name:'CMT8 × Ba Tháng Hai',          coord:[10.7736,106.6741], url:'' }
+
+];
+
+// Vùng ùn tắc (polygon) + đoạn kẹt (polyline) với cấp độ & vận tốc giả lập
+
+const congestionAreas = [
+
+  { id:'A1', level:'cao', color:'#ef4444', type:'polygon',
+
+    speed_kmh: 10,
+
+    coords:[[10.781,106.690],[10.785,106.690],[10.785,106.698],[10.781,106.698]] },
+
+  { id:'A2', level:'trung bình', color:'#f59e0b', type:'polygon',
+
+    speed_kmh: 18,
+
+    coords:[[10.799,106.645],[10.804,106.645],[10.804,106.654],[10.799,106.654]] }
+
+];
+
+// Đoạn kẹt tuyến tính (ví dụ mặt đường đang thi công)
+
+const congestionLines = [
+
+  { id:'L1', level:'trung bình', color:'#f59e0b', type:'line', speed_kmh:15,
+
+    coords:[[10.7718,106.6793],[10.7743,106.6815],[10.7765,106.6830]] },
+
+  { id:'L2', level:'thấp', color:'#22c55e', type:'line', speed_kmh:25,
+
+    coords:[[10.8060,106.7075],[10.8079,106.7095],[10.8095,106.7112]] }
+
+];
+
+// Sự cố
+
+const incidents = [
+
+  { type:'tai nạn', severity:'cao', at:[10.7875,106.7055], note:'Phong tỏa 1 làn' },
+
+  { type:'sửa chữa', severity:'trung bình', at:[10.8012,106.7130], note:'Thi công mặt đường' }
+
+];
+
+
+
+// tốc độ mặc định (không kẹt) để ước lượng độ trễ
+
+const BASE_SPEED_KMH = 35;
+
+
+
+/* ====== Vẽ lớp dữ liệu ====== */
+
+function renderHeat(){
+
+  heatLayer.clearLayers();
+
+  congestionAreas.forEach(p=>{
+
+    const poly = L.polygon(p.coords,{color:p.color,weight:1,opacity:0.8,fillOpacity:0.15}).addTo(heatLayer);
+
+    poly.bindTooltip(`Mật độ: ${p.level}`,{sticky:true});
+
+  });
+
+  congestionLines.forEach(l=>{
+
+    const line = L.polyline(l.coords,{color:l.color,weight:6,opacity:0.6,dashArray:'6,8'}).addTo(heatLayer);
+
+    line.bindTooltip(`Đoạn kẹt: ${l.level}`,{sticky:true});
+
+  });
+
+}
+
+function renderIncidents(){
+
+  incidentLayer.clearLayers();
+
+  incidents.forEach(i=>{
+
+    const m=L.circleMarker(i.at,{radius:8,color:i.severity==='cao'?'#ef4444':'#f59e0b',fillOpacity:0.9,weight:2}).addTo(incidentLayer);
+
+    m.bindPopup(`<strong>${i.type.toUpperCase()}</strong><br>${i.note}`);
+
+  });
+
+}
+
+function renderCameras(){
+
+  cameraMarkers.forEach(m=>map.removeLayer(m)); cameraMarkers=[];
+
+  cameras.forEach(c=>{
+
+    const m=L.marker(c.coord).addTo(map);
+
+    m.bindTooltip(`📷 ${c.name}`,{direction:'top',offset:[0,-10],sticky:true});
+
+    m.on('click',()=>selectCamera(c));
+
+    cameraMarkers.push(m);
+
+  });
+
+  // danh sách camera
+
+  const list=$('#camList'); list.innerHTML='';
+
+  cameras.forEach(c=>{
+
+    const it=document.createElement('div'); it.className='item';
+
+    it.innerHTML=`<div style="display:flex;flex-direction:column"><strong>${c.name}</strong><small style="color:var(--muted)">${c.coord[0].toFixed(4)}, ${c.coord[1].toFixed(4)}</small></div><span class="badge ok">Hoạt động</span>`;
+
+    it.onclick=()=>selectCamera(c);
+
+    list.appendChild(it);
+
+  });
+
+}
+
+renderHeat(); renderIncidents(); renderCameras();
+
+
+
+/* Toggle */
+
+$('#toggleHeat').addEventListener('change',(e)=>{ e.target.checked?heatLayer.addTo(map):map.removeLayer(heatLayer); });
+
+$('#toggleIncidents').addEventListener('change',(e)=>{ e.target.checked?incidentLayer.addTo(map):map.removeLayer(incidentLayer); });
+
+$('#toggleCams').addEventListener('change',(e)=>{ cameraMarkers.forEach(m=> e.target.checked?m.addTo(map):map.removeLayer(m)); });
+
+
+
+/* ====== Chọn điểm đi/đến ====== */
+
+let picking='start';
+
+map.on('click',(e)=>{
+
+  const {lat,lng}=e.latlng;
+
+  if(picking==='start'){
+
+    if(startMarker) startMarker.setLatLng(e.latlng); else startMarker=L.marker(e.latlng,{draggable:true}).addTo(map);
+
+    $('#start').value=`${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+    picking='end'; toast('<strong>Đã chọn điểm đi.</strong> Click để chọn điểm đến.');
+
+  }else{
+
+    if(endMarker) endMarker.setLatLng(e.latlng); else endMarker=L.marker(e.latlng,{draggable:true}).addTo(map);
+
+    $('#end').value=`${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+    picking='start'; toast('<strong>Đã chọn điểm đến.</strong> Nhấn "Tính lộ trình".');
+
+  }
+
+});
+
+$('#start').addEventListener('focus',()=>picking='start');
+
+$('#end').addEventListener('focus',()=>picking='end');
+
+
+
+/* ====== Routing & Phân tích ====== */
+
+function parseLatLng(str){
+
+  if(!str) return null;
+
+  const a=str.split(',').map(s=>parseFloat(s.trim())); if(a.length!==2||a.some(isNaN)) return null;
+
+  return L.latLng(a[0],a[1]);
+
+}
+
+
+
+function computeRoute(withAlts=false){
+
+  const A=parseLatLng($('#start').value), B=parseLatLng($('#end').value);
+
+  if(!A||!B){ toast('⚠️ Vui lòng nhập/chọn đúng tọa độ điểm đi & đến.'); return; }
+
+  if(routeControl){ map.removeControl(routeControl); routeControl=null; }
+
+
+
+  routeControl=L.Routing.control({
+
+    waypoints:[A,B],
+
+    router:L.Routing.osrmv1({serviceUrl:'https://router.project-osrm.org/route/v1', profile:'driving', timeout:15000}),
+
+    show:false, addWaypoints:false, draggableWaypoints:true, fitSelectedRoutes:true,
+
+    showAlternatives:withAlts,
+
+    lineOptions:{styles:[{color:'#22c55e',opacity:0.9,weight:6}]},
+
+    altLineOptions:{styles:[{opacity:0.9,weight:6},{opacity:0.4,weight:10}]},
+
+    createMarker:(i,wp)=> L.marker(wp.latLng, {icon:L.divIcon({className:'', html:`<div style="background:#22c55e;border:2px solid white;width:14px;height:14px;border-radius:50%"></div>`})})
+
+  }).addTo(map);
+
+
+
+  routeControl.on('routesfound', (e)=>{
+
+    const routes=e.routes; if(!routes.length) return;
+
+    const primary=routes[0];
+
+    const sec=Math.round(primary.summary.totalTime);
+
+    const km=(primary.summary.totalDistance/1000).toFixed(1);
+
+    $('#etaPill').style.display='inline-flex'; $('#etaTxt').textContent=`${km} km • ${Math.round(sec/60)} phút (ước tính)`;
+
+
+
+    analyzeAndDecorateRoutes(routes);
+
+  });
+
+  routeControl.on('routingerror', ()=> toast('❌ Không tính được lộ trình. Thử lại hoặc đổi điểm.'));
+
+}
+
+
+
+function analyzeAndDecorateRoutes(routes){
+
+  // Xóa cảnh báo & phân tích cũ
+
+  alertsBox.innerHTML=''; $('#analysis').innerHTML='';
+
+
+
+  // Vẽ đè highlight các đoạn tuyến đi qua kẹt
+
+  const badOverlays = [];
+
+
+
+  const results = routes.map((r,idx)=>{
+
+    const coords = r.coordinates || [];
+
+    const meters = r.summary.totalDistance;
+
+    const seconds = r.summary.totalTime;
+
+
+
+    // Tính chiều dài đi qua kẹt & ước lượng độ trễ
+
+    const exposure = computeCongestionExposure(coords);
+
+    const exposurePct = meters ? (exposure.length_m / meters) : 0;
+
+    const delaySec = estimateDelay(exposure); // dựa vào chênh lệch tốc độ
+
+
+
+    // Vẽ highlight đoạn kẹt trên tuyến
+
+    exposure.hitSegments.forEach(seg=>{
+
+      const h=L.polyline(seg.coords,{color: seg.level==='cao'?'#ef4444':(seg.level==='trung bình'?'#f59e0b':'#22c55e'),
+
+        weight:8, opacity:0.85}).addTo(map);
+
+      badOverlays.push(h);
+
+    });
+
+
+
+    return {
+
+      idx, meters, seconds, exposurePct, delaySec,
+
+      etaWithDelay: seconds + delaySec,
+
+      label: idx===0?'Tuyến chính':`Tuyến ${idx+1}`
+
+    };
+
+  });
+
+
+
+  // Khuyến nghị: độ trễ thấp nhất, nếu ngang nhau chọn ETA tổng thấp hơn
+
+  results.sort((a,b)=> (a.delaySec-b.delaySec) || (a.etaWithDelay-b.etaWithDelay));
+
+  const bestIdx = results[0].idx;
+
+
+
+  // Bảng phân tích
+
+  const tbl = document.createElement('table');
+
+  tbl.innerHTML = `
+
+    <thead><tr>
+
+      <th>Tuyến</th><th>Quãng đường</th><th>ETA (OSRM)</th><th>Đi qua kẹt</th><th>Độ trễ ước tính</th><th>ETA dự kiến</th>
+
+    </tr></thead>
+
+    <tbody></tbody>`;
+
+  const tb = tbl.querySelector('tbody');
+
+
+
+  routes.forEach((r, i)=>{
+
+    const rr = results.find(x=>x.idx===i);
+
+    const tr = document.createElement('tr'); if(i===bestIdx) tr.className='reco';
+
+    tr.innerHTML = `
+
+      <td>${rr.label} ${i===bestIdx?'<span class="badge ok">Khuyến nghị</span>':''}</td>
+
+      <td class="key">${(rr.meters/1000).toFixed(1)} km</td>
+
+      <td class="key">${Math.round(rr.seconds/60)} phút</td>
+
+      <td class="key">${(rr.exposurePct*100).toFixed(0)}%</td>
+
+      <td class="key">${Math.round(rr.delaySec/60)} phút</td>
+
+      <td class="key"><strong>${Math.round(rr.etaWithDelay/60)} phút</strong></td>`;
+
+    tr.onclick = ()=> { routeControl.spliceWaypoints(0,2, r.inputWaypoints[0].latLng, r.inputWaypoints[r.inputWaypoints.length-1].latLng); };
+
+    tb.appendChild(tr);
+
+  });
+
+  $('#analysis').appendChild(tbl);
+
+
+
+  // Cảnh báo tổng hợp
+
+  const worst = results.reduce((m,x)=> x.exposurePct>m.exposurePct?x:m, results[0]);
+
+  if(worst.exposurePct>0.3) pushAlert('CẢNH BÁO KẸT XE','Các tuyến có tỷ lệ đi qua vùng kẹt khá cao. Cân nhắc đổi khung giờ hoặc phương tiện.','danger');
+
+  else if(worst.exposurePct>0.1) pushAlert('Lưu ý','Một số đoạn có kẹt trung bình. Theo dõi camera để điều chỉnh.','warn');
+
+  else pushAlert('Tốt','Hầu hết tuyến tránh được vùng kẹt.','ok');
+
+}
+
+
+
+function computeCongestionExposure(coords){
+
+  // Trả về tổng chiều dài đi trong vùng/đoạn kẹt + danh sách đoạn bị kẹt để highlight
+
+  let length_m = 0;
+
+  const hitSegments = [];
+
+
+
+  function hav(a,b){ const R=6371000; const toRad=d=>d*Math.PI/180;
+
+    const dLat=toRad(b.lat-a.lat), dLon=toRad(b.lng-a.lng);
+
+    const s1=Math.sin(dLat/2), s2=Math.sin(dLon/2);
+
+    const A=s1*s1+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*s2*s2;
+
+    return 2*R*Math.asin(Math.sqrt(A));
+
+  }
+
+
+
+  // helper: kiểm tra 1 điểm nằm trong polygon (ray-casting đơn giản)
+
+  function pointInPolygon(pt, poly){
+
+    const x=pt.lat, y=pt.lng; let inside=false;
+
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+
+      const xi=poly[i][0], yi=poly[i][1]; const xj=poly[j][0], yj=poly[j][1];
+
+      const intersect = ((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi);
+
+      if(intersect) inside=!inside;
+
+    }
+
+    return inside;
+
+  }
+
+
+
+  // helper: khoảng cách tối thiểu tới polyline
+
+  function distToPolyline(pt, line){
+
+    let best=Infinity;
+
+    for(let i=0;i<line.length-1;i++){
+
+      const a=L.latLng(line[i][0],line[i][1]), b=L.latLng(line[i+1][0],line[i+1][1]);
+
+      // xấp xỉ: min(haversine tới hai đầu)
+
+      const da=hav(pt,a), db=hav(pt,b);
+
+      best = Math.min(best, da, db);
+
+    }
+
+    return best;
+
+  }
+
+
+
+  // duyệt từng cặp điểm trên tuyến
+
+  for(let i=0;i<coords.length-1;i++){
+
+    const a=coords[i], b=coords[i+1];
+
+    const segLen = hav(a,b);
+
+    // kiểm tra polygon
+
+    let hitLevel=null;
+
+    for(const area of congestionAreas){
+
+      if(pointInPolygon(a,[...area.coords]) || pointInPolygon(b,[...area.coords])){
+
+        hitLevel = area.level; break;
+
+      }
+
+    }
+
+    // kiểm tra line: nếu khoảng cách đến line nhỏ hơn 40m coi như trùng
+
+    if(!hitLevel){
+
+      for(const l of congestionLines){
+
+        const d = Math.min(distToPolyline(a,l.coords), distToPolyline(b,l.coords));
+
+        if(d<40){ hitLevel = l.level; break; }
+
+      }
+
+    }
+
+    if(hitLevel){
+
+      length_m += segLen;
+
+      hitSegments.push({ level: hitLevel, coords:[ [a.lat,a.lng],[b.lat,b.lng] ] });
+
+    }
+
+  }
+
+  return { length_m, hitSegments };
+
+}
+
+
+
+function estimateDelay(exposure){
+
+  // Ước lượng độ trễ = tổng(đoạn_kẹt / v_kẹt - đoạn_kẹt / v_bình_thường)
+
+  // mapping tốc độ theo level
+
+  const speedByLevel = { 'thấp':25, 'trung bình':18, 'cao':10 };
+
+  let delaySec = 0;
+
+
+
+  function hav(a,b){ const R=6371000; const toRad=d=>d*Math.PI/180;
+
+    const dLat=toRad(b[0]-a[0]), dLon=toRad(b[1]-a[1]);
+
+    const s1=Math.sin(dLat/2), s2=Math.sin(dLon/2);
+
+    const A=s1*s1+Math.cos(toRad(a[0]))*Math.cos(toRad(b[0]))*s2*s2;
+
+    return 2*R*Math.asin(Math.sqrt(A));
+
+  }
+
+
+
+  for(const seg of exposure.hitSegments){
+
+    const d = hav(seg.coords[0], seg.coords[1]); // mét
+
+    const vCong = (speedByLevel[seg.level]||18) * 1000/3600;
+
+    const vBase = BASE_SPEED_KMH * 1000/3600;
+
+    delaySec += (d/vCong - d/vBase);
+
+  }
+
+  return Math.max(0, delaySec);
+
+}
+
+
+
+/* ====== Buttons ====== */
+
+$('#btnRoute').addEventListener('click', ()=> computeRoute(false));
+
+$('#btnAlt').addEventListener('click', ()=> computeRoute(true));
+
+$('#btnClear').addEventListener('click', ()=>{
+
+  if(startMarker){map.removeLayer(startMarker); startMarker=null;}
+
+  if(endMarker){map.removeLayer(endMarker); endMarker=null;}
+
+  $('#start').value=''; $('#end').value='';
+
+  $('#etaPill').style.display='none'; alertsBox.innerHTML=''; $('#analysis').innerHTML='';
+
+  if(routeControl){ map.removeControl(routeControl); routeControl=null; }
+
+});
+
+$('#btnGeo').addEventListener('click', ()=>{
+
+  if(!navigator.geolocation){ toast('Thiết bị không hỗ trợ định vị.'); return; }
+
+  navigator.geolocation.getCurrentPosition(pos=>{
+
+    const {latitude, longitude} = pos.coords;
+
+    const ll=[latitude,longitude]; map.setView(ll,15);
+
+    if(!startMarker) startMarker=L.marker(ll,{draggable:true}).addTo(map); else startMarker.setLatLng(ll);
+
+    $('#start').value=`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+
+    toast('📍 Đã lấy vị trí của bạn làm điểm đi.');
+
+  }, ()=> toast('Không thể lấy vị trí.'));
+
+});
+
+
+
+/* ====== Camera viewer ====== */
+
+let hls=null;
+
+function selectCamera(c){
+
+  $('#camTitle').textContent=`Camera: ${c.name}`;
+
+  $('#camSub').textContent=`${c.coord[0].toFixed(4)}, ${c.coord[1].toFixed(4)}`;
+
+  updateLaneStatus(true);
+
+  if(c.url) playCamera(c.url);
+
+  // pan map nhẹ đến camera
+
+  map.flyTo(c.coord, 16, {duration:0.6});
+
+}
+
+$('#btnPlay').addEventListener('click', ()=>{
+
+  const url=$('#camUrl').value.trim();
+
+  if(!url){ toast('Dán URL camera (.m3u8 / .mp4 / MJPEG).'); return; }
+
+  playCamera(url);
+
+});
+
+function playCamera(url){
+
+  const video=$('#camPlayer');
+
+  if(Hls.isSupported() && url.endsWith('.m3u8')){
+
+    if(hls){hls.destroy();hls=null;}
+
+    hls=new Hls(); hls.loadSource(url); hls.attachMedia(video);
+
+    hls.on(Hls.Events.MANIFEST_PARSED, ()=> video.play().catch(()=>{}));
+
+  }else{
+
+    if(hls){hls.destroy();hls=null;}
+
+    video.src=url; video.play().catch(()=>{});
+
+  }
+
+  toast('🎥 Đang phát camera…');
+
+}
+
+function updateLaneStatus(randomize=false){
+
+  const lanes=$('#lanes').children; const now=new Date();
+
+  for(let i=0;i<lanes.length;i++){
+
+    const lane=lanes[i];
+
+    const open = randomize ? Math.random()>0.25 : ((now.getMinutes()+i)%3!==0);
+
+    lane.classList.toggle('open', open);
+
+    lane.classList.toggle('closed', !open);
+
+    lane.textContent = i+1;
+
+  }
+
+}
+
+setInterval(updateLaneStatus, 10000);
+
+
+
+/* ====== Khởi tạo ====== */
+
+pushAlert('Lưu ý','Dữ liệu kẹt xe & camera đang ở chế độ demo. Kết nối nguồn thật để dùng sản xuất.','warn');
+
+toast('💡 Click bản đồ để chọn điểm đi/đến. Dùng OSRM demo để tính lộ trình.');
+
+</script>
+
+</body>
+
+</html>
